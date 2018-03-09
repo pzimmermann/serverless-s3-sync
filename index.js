@@ -24,9 +24,10 @@ class ServerlessS3Sync {
     };
 
     this.hooks = {
-      'after:deploy:deploy': () => BbPromise.bind(this).then(this.sync),
+      'aws:deploy:deploy:uploadArtifacts': () => BbPromise.bind(this).then(this.syncArtifact),
+      'after:deploy:deploy': () => BbPromise.bind(this).then(this.syncDeploy),
       'before:remove:remove': () => BbPromise.bind(this).then(this.clear),
-      's3sync:sync': () => BbPromise.bind(this).then(this.sync)
+      's3sync:sync': () => BbPromise.bind(this).then(this.syncArtifact).then(this.syncDeploy)
     };
   }
 
@@ -40,21 +41,37 @@ class ServerlessS3Sync {
     });
   }
 
-  sync() {
+  syncArtifact() {
+    return this.sync(true);
+  }
+
+  syncDeploy() {
+    return this.sync(false);
+  }
+
+  sync(isArtifact) {
     if (!Array.isArray(this.s3Sync)) {
       return Promise.resolve();
     }
     const cli = this.serverless.cli;
-    cli.consoleLog(`${messagePrefix}${chalk.yellow('Syncing directories and S3 prefixes...')}`);
+    cli.consoleLog(`${messagePrefix}${chalk.yellow('Syncing directories and S3 prefixes...')} artifact:${isArtifact}`);
     const servicePath = this.servicePath;
     const promises = this.s3Sync.map((s) => {
       let bucketPrefix = '';
-      if (!s.hasOwnProperty('bucketPrefix')) {
+      let artifact = false;
+      if (s.hasOwnProperty('artifact')) {
+        artifact = s.artifact;
+      }
+      if(artifact != isArtifact) {
+        return Promise.resolve();
+      }
+      if (s.hasOwnProperty('bucketPrefix')) {
         bucketPrefix = s.bucketPrefix;
       }
       if (!s.bucketName || !s.localDir) {
         throw 'Invalid custom.s3Sync';
       }
+      cli.consoleLog(`${messagePrefix}${chalk.yellow(s.localDir)} -> ${chalk.yellow(s.bucketName+"/"+bucketPrefix)}`);
       return new Promise((resolve) => {
         const params = {
           maxAsyncS3: 5,
