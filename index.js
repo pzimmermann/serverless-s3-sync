@@ -4,6 +4,7 @@ const BbPromise = require('bluebird');
 const AWS = require('aws-sdk');
 const s3 = require('@monolambda/s3');
 const chalk = require('chalk');
+const minimatch = require('minimatch');
 
 const messagePrefix = 'S3 Sync: ';
 
@@ -68,19 +69,44 @@ class ServerlessS3Sync {
       if (s.hasOwnProperty('bucketPrefix')) {
         bucketPrefix = s.bucketPrefix;
       }
+      let acl = 'private';
+      if (s.hasOwnProperty('acl')) {
+        acl = s.acl;
+      }
+      let followSymlinks = false;
+      if (s.hasOwnProperty('followSymlinks')) {
+        followSymlinks = s.followSymlinks;
+      }
       if (!s.bucketName || !s.localDir) {
         throw 'Invalid custom.s3Sync';
       }
       cli.consoleLog(`${messagePrefix}${chalk.yellow(s.localDir)} -> ${chalk.yellow(s.bucketName+"/"+bucketPrefix)}`);
       return new Promise((resolve) => {
+        const localDir = [servicePath, s.localDir].join('/');
+
         const params = {
           maxAsyncS3: 5,
-          localDir: [servicePath, s.localDir].join('/'),
+          localDir,
           deleteRemoved: true,
-          followSymlinks: false,
+          followSymlinks: followSymlinks,
+          getS3Params: (localFile, stat, cb) => {
+            const s3Params = {};
+
+            if(Array.isArray(s.params)) {
+              s.params.forEach((param) => {
+                const glob = Object.keys(param)[0];
+                if(minimatch(localFile, `${localDir}/${glob}`)) {
+                  Object.assign(s3Params, param[glob] || {});
+                }
+              });
+            }
+
+            cb(null, s3Params);
+          },
           s3Params: {
             Bucket: s.bucketName,
-            Prefix: bucketPrefix
+            Prefix: bucketPrefix,
+            ACL: acl
           }
         };
         const uploader = this.client().uploadDir(params);

@@ -32,6 +32,13 @@ custom:
       localDir: dist/assets # required
     - bucketName: my-other-site
       localDir: path/to/other-site
+      acl: public-read # optional
+      followSymlinks: true # optional
+      params: # optional
+        - index.html:
+            CacheControl: 'no-cache'
+        - "*.js":
+            CacheControl: 'public, max-age=31536000'
 
 resources:
   Resources:
